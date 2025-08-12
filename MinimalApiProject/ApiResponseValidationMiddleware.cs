@@ -77,8 +77,12 @@ namespace MinimalApiProject
 
             if (context.Response.StatusCode != 204)
             {
-            var finalContent = correctedContent ?? responseContent;
-            await originalBodyStream.WriteAsync(Encoding.UTF8.GetBytes(finalContent));
+                var finalContent = correctedContent ?? responseContent;
+                // Only write if the stream is writable and not closed
+                if (originalBodyStream.CanWrite)
+                {
+                    await originalBodyStream.WriteAsync(Encoding.UTF8.GetBytes(finalContent));
+                }
             }
         }
 
