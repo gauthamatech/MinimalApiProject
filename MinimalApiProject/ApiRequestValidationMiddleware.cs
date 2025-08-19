@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text;
 
@@ -201,18 +201,18 @@ namespace MinimalApiProject
                 }
             }
 
-            // For updates, validate createdAt if present
-            if (isUpdate && json.TryGetProperty("createdAt", out var createdAtElement))
+            // Validate createdAt for both create and update operations
+            if (json.TryGetProperty("createdAt", out var createdAtElement))
             {
                 if (createdAtElement.ValueKind != JsonValueKind.String ||
                     !DateTime.TryParse(createdAtElement.GetString(), out _))
                 {
-                    errors.Add("Invalid date-time format");
+                    errors.Add("Invalid date-time format for createdAt");
                 }
             }
 
             return errors.Any() ?
-                ValidationResult.Error(422, string.Join("; ", errors)) :
+                ValidationResult.Error(400, string.Join("; ", errors)) :
                 ValidationResult.Success();
         }
 
@@ -238,7 +238,7 @@ namespace MinimalApiProject
             }
 
             return errors.Any() ?
-                ValidationResult.Error(422, string.Join("; ", errors)) :
+                ValidationResult.Error(400, string.Join("; ", errors)) :
                 ValidationResult.Success();
         }
 
@@ -275,13 +275,16 @@ namespace MinimalApiProject
                     errors.Add("CategoryId must be a positive integer");
                 }
 
-                // Validate userId
-                if (!json.TryGetProperty("userId", out var userIdElement) ||
-                    userIdElement.ValueKind == JsonValueKind.Null ||
-                    !userIdElement.TryGetInt32(out var userId) ||
-                    userId <= 0)
+                // Make userId optional for product creation to match test expectations
+                // Only validate userId if it's provided in the request
+                if (json.TryGetProperty("userId", out var userIdElement))
                 {
-                    errors.Add("UserId must be a positive integer");
+                    if (userIdElement.ValueKind == JsonValueKind.Null ||
+                        !userIdElement.TryGetInt32(out var userId) ||
+                        userId <= 0)
+                    {
+                        errors.Add("UserId must be a positive integer");
+                    }
                 }
             }
             catch (Exception ex)
@@ -299,7 +302,7 @@ namespace MinimalApiProject
             }
 
             return errors.Any() ?
-                ValidationResult.Error(422, string.Join("; ", errors)) :
+                ValidationResult.Error(400, string.Join("; ", errors)) :
                 ValidationResult.Success();
         }
 

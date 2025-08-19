@@ -1,4 +1,4 @@
-﻿namespace MinimalApiProject.Endpoints
+namespace MinimalApiProject.Endpoints
 {
     using Microsoft.EntityFrameworkCore;
     using MinimalApiProject.Data;
@@ -18,6 +18,23 @@
 
             app.MapPost("/api/products", async (Product product, AppDbContext db) =>
             {
+                // Validate that the Category exists
+                var categoryExists = await db.Categories.AnyAsync(c => c.Id == product.CategoryId);
+                if (!categoryExists)
+                {
+                    return Results.BadRequest("Invalid CategoryId");
+                }
+
+                // If UserId is provided, validate that the User exists
+                if (product.UserId.HasValue)
+                {
+                    var userExists = await db.Users.AnyAsync(u => u.Id == product.UserId.Value);
+                    if (!userExists)
+                    {
+                        return Results.BadRequest("Invalid UserId");
+                    }
+                }
+
                 db.Products.Add(product);
                 await db.SaveChangesAsync();
                 return Results.Created($"/api/products/{product.Id}", product);
@@ -32,7 +49,12 @@
                 product.Description = inputProduct.Description;
                 product.Price = inputProduct.Price;
                 product.CategoryId = inputProduct.CategoryId;
-                product.UserId = inputProduct.UserId;
+                
+                // Only update UserId if it's provided
+                if (inputProduct.UserId.HasValue)
+                {
+                    product.UserId = inputProduct.UserId;
+                }
 
                 await db.SaveChangesAsync();
                 return Results.NoContent();
