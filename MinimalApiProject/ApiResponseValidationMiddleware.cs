@@ -24,11 +24,11 @@ namespace MinimalApiProject
                 return;
             }
 
+            var originalBodyStream = context.Response.Body;
+            
             try
             {
                 // Capture the original response stream
-                var originalBodyStream = context.Response.Body;
-
                 using var responseBody = new MemoryStream();
                 context.Response.Body = responseBody;
 
@@ -40,15 +40,27 @@ namespace MinimalApiProject
             }
             catch (ValidationException ex)
             {
+                // Reset response stream for exception handling
+                context.Response.Body = originalBodyStream;
                 await HandleValidationException(context, ex);
+            }
+            catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex)
+            {
+                // Reset response stream for exception handling
+                context.Response.Body = originalBodyStream;
+                await HandleBadHttpRequestException(context, ex);
             }
             catch (Exception ex) when (IsEntityFrameworkException(ex))
             {
+                // Reset response stream for exception handling
+                context.Response.Body = originalBodyStream;
                 await HandleEntityFrameworkException(context, ex);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unhandled exception in API middleware");
+                // Reset response stream for exception handling
+                context.Response.Body = originalBodyStream;
                 await HandleUnexpectedException(context, ex);
             }
         }
@@ -74,6 +86,9 @@ namespace MinimalApiProject
 
             // Set the corrected status code
             context.Response.StatusCode = correctedStatusCode;
+
+            // Reset response stream back to original
+            context.Response.Body = originalBodyStream;
 
             if (context.Response.StatusCode != 204)
             {
@@ -245,54 +260,135 @@ namespace MinimalApiProject
 
         private async Task HandleValidationException(HttpContext context, ValidationException ex)
         {
-            context.Response.StatusCode = 422;
-            context.Response.ContentType = "application/json";
-
-            var response = JsonSerializer.Serialize(new
+            // Check if response has already started
+            if (context.Response.HasStarted)
             {
-                error = "Validation failed",
-                details = ex.Message
-            });
+                _logger.LogError(ex, "Cannot handle validation exception - response has already started");
+                return;
+            }
 
-            await context.Response.WriteAsync(response);
+            try
+            {
+                context.Response.Clear();
+                context.Response.StatusCode = 422;
+                context.Response.ContentType = "application/json";
+
+                var response = JsonSerializer.Serialize(new
+                {
+                    error = "Validation failed",
+                    details = ex.Message
+                });
+
+                await context.Response.WriteAsync(response);
+            }
+            catch (Exception writeEx)
+            {
+                _logger.LogError(writeEx, "Failed to write validation exception response");
+            }
+        }
+
+        private async Task HandleBadHttpRequestException(HttpContext context, Microsoft.AspNetCore.Http.BadHttpRequestException ex)
+        {
+            // Check if response has already started
+            if (context.Response.HasStarted)
+            {
+                _logger.LogError(ex, "Cannot handle bad request exception - response has already started");
+                return;
+            }
+
+            try
+            {
+                context.Response.Clear();
+                context.Response.StatusCode = 422;
+                context.Response.ContentType = "application/json";
+
+                string errorMessage = "Validation failed";
+                
+                // Check for common JSON parsing issues
+                if (ex.Message.Contains("JSON") || ex.Message.Contains("DateTime"))
+                {
+                    errorMessage = "Invalid JSON format or data type";
+                }
+                
+                var response = JsonSerializer.Serialize(new
+                {
+                    error = errorMessage
+                });
+
+                await context.Response.WriteAsync(response);
+            }
+            catch (Exception writeEx)
+            {
+                _logger.LogError(writeEx, "Failed to write bad request exception response");
+            }
         }
 
         private async Task HandleEntityFrameworkException(HttpContext context, Exception ex)
         {
-            context.Response.StatusCode = 422;
-            context.Response.ContentType = "application/json";
-
-            // Handle common EF exceptions
-            string errorMessage = "Validation failed";
-
-            if (ex.Message.Contains("foreign key constraint") || ex.Message.Contains("FOREIGN KEY"))
+            // Check if response has already started
+            if (context.Response.HasStarted)
             {
-                errorMessage = "Invalid reference to related entity";
-            }
-            else if (ex.Message.Contains("duplicate") || ex.Message.Contains("unique"))
-            {
-                errorMessage = "Duplicate entry";
+                _logger.LogError(ex, "Cannot handle EF exception - response has already started");
+                return;
             }
 
-            var response = JsonSerializer.Serialize(new
+            try
             {
-                error = errorMessage
-            });
+                context.Response.Clear();
+                context.Response.StatusCode = 422;
+                context.Response.ContentType = "application/json";
 
-            await context.Response.WriteAsync(response);
+                // Handle common EF exceptions
+                string errorMessage = "Validation failed";
+
+                if (ex.Message.Contains("foreign key constraint") || ex.Message.Contains("FOREIGN KEY"))
+                {
+                    errorMessage = "Invalid reference to related entity";
+                }
+                else if (ex.Message.Contains("duplicate") || ex.Message.Contains("unique"))
+                {
+                    errorMessage = "Duplicate entry";
+                }
+
+                var response = JsonSerializer.Serialize(new
+                {
+                    error = errorMessage
+                });
+
+                await context.Response.WriteAsync(response);
+            }
+            catch (Exception writeEx)
+            {
+                _logger.LogError(writeEx, "Failed to write EF exception response");
+            }
         }
 
         private async Task HandleUnexpectedException(HttpContext context, Exception ex)
         {
-            context.Response.StatusCode = 500;
-            context.Response.ContentType = "application/json";
-
-            var response = JsonSerializer.Serialize(new
+            // Check if response has already started
+            if (context.Response.HasStarted)
             {
-                error = "Internal server error"
-            });
+                _logger.LogError(ex, "Cannot handle unexpected exception - response has already started");
+                return;
+            }
 
-            await context.Response.WriteAsync(response);
+            try
+            {
+                context.Response.Clear();
+                context.Response.StatusCode = 500;
+                context.Response.ContentType = "application/json";
+
+                var response = JsonSerializer.Serialize(new
+                {
+                    error = "Internal server error"
+                });
+
+                await context.Response.WriteAsync(response);
+            }
+            catch (Exception writeEx)
+            {
+                _logger.LogError(writeEx, "Failed to write unexpected exception response");
+            }
         }
 
         private static bool IsEntityFrameworkException(Exception ex)
